@@ -164,7 +164,7 @@
     <input
       id="user-input"
       type="text"
-      placeholder="예) 고3 단과 시간표 알려줘 / 영어 2등급 수업 추천"
+      placeholder="예) 고3 단과 시간표 알려줘 / 수학 3등급, 영어 1등급 수업 추천"
     />
     <button id="send-btn">보내기</button>
   </div>
@@ -582,22 +582,20 @@
      4) 텍스트 입력 → 과목/등급 파싱 & 키워드 매칭
      =============================== */
 
-  // 문장 안에서 과목 찾기
+  // 문장 안에서 과목 찾기 (첫 과목용)
   function detectSubjectFromText(text) {
     for (const sub of SUBJECT_LIST) {
-      if (text.includes(sub)) return sub; // "영어", "수학" 등
+      if (text.includes(sub)) return sub;
     }
     return null;
   }
 
-  // 문장 안에서 등급 → 우리 기준 등급대(1~2등급 등)로 변환
+  // 문장 안에서 등급대 하나만 찾기 (1~2등급 등)
   function detectLevelBandFromText(text) {
-    // "1~2등급" 같이 대역으로 바로 쓴 경우
     for (const band of LEVEL_LIST) {
       if (text.includes(band)) return band;
     }
 
-    // "2등급", "3등급" 같이 한 등급만 쓴 경우
     const m = text.match(/([1-4])\s*등급/);
     if (!m) return null;
 
@@ -608,17 +606,56 @@
     return null;
   }
 
+  // 여러 과목+등급을 한 문장에서 전부 뽑기
+  // 예: "수학 3등급, 영어 1등급인데 추천해줘"
+  function parseSubjectLevelPairs(text) {
+    const pattern = /(국어|수학|영어|사회|과학|논술)\s*([1-4])\s*등급/g;
+    const result = [];
+    let m;
+    while ((m = pattern.exec(text)) !== null) {
+      const subject = m[1];
+      const grade = parseInt(m[2], 10);
+      let levelText = null;
+      if (grade === 1 || grade === 2) levelText = "1~2등급";
+      else if (grade === 3) levelText = "2~3등급";
+      else if (grade === 4) levelText = "3~4등급";
+
+      if (levelText) {
+        result.push({ subject, levelText });
+      }
+    }
+    return result;
+  }
+
   function handleTextQuery(rawText) {
     const text = rawText.trim();
     if (!text) return;
 
-    // 🔍 과목/등급 파싱
+    // 여러 과목+등급 쌍 파싱
+    const pairs = parseSubjectLevelPairs(text);
+
+    // 단일 과목/등급 파싱 (fallback 용)
     const subject = detectSubjectFromText(text);
     const levelText = detectLevelBandFromText(text);
 
     // ✅ "추천"이라는 말이 들어가면 성적별 추천 의도로 우선 처리
     if (text.includes("추천")) {
-      // 과목 + 등급 둘 다 있는 경우 → 바로 추천 결과
+      // 1) "수학 3등급, 영어 1등급" 처럼 여러 개가 있는 경우
+      if (pairs.length > 0) {
+        let summary = "성적별 수업 추천입니다.\n";
+        pairs.forEach(p => {
+          summary += `\n- ${p.subject} / ${p.levelText}`;
+        });
+        addBotMessage(summary.trim());
+
+        // 각 과목/등급별 추천 결과를 순서대로 출력
+        pairs.forEach(p => {
+          showRecommendResult(p.subject, p.levelText);
+        });
+        return;
+      }
+
+      // 2) 과목 + 등급 둘 다 있는 경우 → 바로 추천 결과
       if (subject && levelText) {
         addBotMessage(
           `성적별 수업 추천입니다.\n『${subject} / ${levelText}』 기준으로 강좌를 찾아볼게요.`
@@ -626,7 +663,7 @@
         showRecommendResult(subject, levelText);
         return;
       }
-      // 과목만 있는 경우 → 등급 버튼 플로우
+      // 3) 과목만 있는 경우 → 등급 버튼 플로우
       else if (subject && !levelText) {
         addBotMessage(
           `${subject} 수업 중에서 어느 등급인지 알려주시면 더 정확한 추천이 가능해요.\n먼저 등급 버튼을 선택해 주세요.`
@@ -634,7 +671,7 @@
         renderRecommendLevelButtons(subject);
         return;
       }
-      // 등급만 있는 경우 → 과목 버튼 플로우
+      // 4) 등급만 있는 경우 → 과목 버튼 플로우
       else if (!subject && levelText) {
         addBotMessage(
           `${levelText} 기준으로 어떤 과목 수업을 추천받고 싶은지 과목을 선택해 주세요.`
@@ -703,7 +740,7 @@
     addBotMessage(
       "아직은 몇 가지 키워드로만 이해할 수 있어요.\n" +
       "예) '고3 단과 시간표', '자습전용관', '모의고사 일정', '성적별 수업 추천',\n" +
-      "또는 '영어 2등급 수업 추천해줘'처럼 과목/등급과 함께 입력해 주세요.\n" +
+      "또는 '수학 3등급, 영어 1등급 수업 추천해줘'처럼 과목/등급과 함께 입력해 주세요.\n" +
       "아래 메뉴 버튼에서 직접 선택해 주셔도 됩니다."
     );
     renderMainButtons();
@@ -727,7 +764,7 @@
       "학원 이용, 모집요강, 단과 시간표, 자습전용관, 모의고사, 출강 선생님 안내와\n" +
       "성적별 수업 추천 기능을 제공합니다.\n" +
       "아래 버튼을 누르시거나, 직접 질문을 입력해 보세요.\n\n" +
-      "예) '고3 단과 시간표 알려줘', '성적별 수업 추천', '영어 2등급 수업 추천해줘'";
+      "예) '고3 단과 시간표 알려줘', '성적별 수업 추천', '수학 3등급, 영어 1등급 수업 추천해줘'";
     addBotMessage(firstMsg);
     renderMainButtons();
   }
